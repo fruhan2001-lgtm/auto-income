@@ -1,5 +1,6 @@
 import json
 import uuid
+import hmac
 import psycopg
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -47,11 +48,18 @@ class Handler(BaseHTTPRequestHandler):
             self.send(200, PAGE.read_bytes(), "text/html; charset=utf-8")
         elif self.path == "/health":
             self.send(200, b'{"status":"ok","lead_storage":false}')
+        elif self.path == "/health/db":
+            try:
+                with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=5) as conn:
+                    conn.execute("SELECT 1")
+                self.send(200, b'{"database":"ok"}')
+            except (psycopg.Error, KeyError):
+                self.send(503, b'{"database":"unavailable"}')
         else:
             self.send(404, b'{"error":"not_found"}')
 
     def do_POST(self):
-        if self.path != "/api/validate":
+        if self.path not in ("/api/validate", "/api/test-lead"):
             self.send(404, b'{"error":"not_found"}')
             return
         try:
@@ -65,6 +73,11 @@ class Handler(BaseHTTPRequestHandler):
             self.send(400, b'{"error":"invalid_request"}')
             return
         if self.path == "/api/test-lead":
+            secret = os.environ.get("ADMIN_TOKEN", "")
+            supplied = self.headers.get("Authorization", "")
+            if not secret or not hmac.compare_digest(supplied.encode(), ("Bearer " + secret).encode()):
+                self.send(403, b'{"error":"forbidden"}')
+                return
             if data.get("description") != "TEST":
                 self.send(400, b'{"error":"test_only"}')
                 return
