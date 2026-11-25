@@ -5,6 +5,17 @@ services:
     plan: free
     region: frankfurt
     branch: main
-    buildCommand: python --version
+    buildCommand: pip install -r requirements.txt
     startCommand: python server.py
     healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: auto-income-db
+          property: connectionString
+databases:
+  - name: auto-income-db
+    plan: free
+    region: frankfurt
+    postgresMajorVersion: '16'
+    ipAllowList: []
