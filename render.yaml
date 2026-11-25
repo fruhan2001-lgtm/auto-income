@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: auto-income-sk
+    runtime: python
+    plan: free
+    region: frankfurt
+    branch: main
+    buildCommand: python --version
+    startCommand: python server.py
+    healthCheckPath: /health
