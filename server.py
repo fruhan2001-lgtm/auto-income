@@ -1,4 +1,6 @@
 import json
+import uuid
+import psycopg
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -17,6 +19,18 @@ def validate(data):
             and data["area"] in AREAS
             and isinstance(description, str)
             and 0 < len(description.strip()) <= 1500)
+
+def store_test(data):
+    url = os.environ.get("DATABASE_URL")
+    if not url:
+        raise RuntimeError("Database unavailable")
+    with psycopg.connect(url, connect_timeout=5) as conn:
+        with conn.cursor() as cur:
+            cur.execute("CREATE TABLE IF NOT EXISTS test_leads (id uuid PRIMARY KEY, created_at timestamptz DEFAULT now(), service text NOT NULL, area text NOT NULL)")
+            cur.execute("DELETE FROM test_leads WHERE created_at < now() - interval '7 days'")
+            ident = uuid.uuid4()
+            cur.execute("INSERT INTO test_leads (id, service, area) VALUES (%s, %s, %s)", (ident, data["service"], data["area"]))
+    return str(ident)
 
 class Handler(BaseHTTPRequestHandler):
     def send(self, status, body, content_type="application/json; charset=utf-8"):
@@ -49,6 +63,17 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError()
         except (ValueError, UnicodeError):
             self.send(400, b'{"error":"invalid_request"}')
+            return
+        if self.path == "/api/test-lead":
+            if data.get("description") != "TEST":
+                self.send(400, b'{"error":"test_only"}')
+                return
+            try:
+                ident = store_test(data)
+            except (psycopg.Error, RuntimeError):
+                self.send(503, b'{"error":"database_unavailable"}')
+                return
+            self.send(201, json.dumps({"test": True, "id": ident}).encode())
             return
         self.send(200, b'{"valid":true,"stored":false}')
 
